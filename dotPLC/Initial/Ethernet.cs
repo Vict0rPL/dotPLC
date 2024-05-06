@@ -544,37 +544,47 @@ namespace dotPLC.Initial
         /// <param name="value">A single value to be written.</param>
         internal abstract void WriteDevice(string label, float value);
         /// <summary>
+        /// Write a string to the server.
+        /// </summary>
+        /// <param name="label">Label name. (EX: D0, Y2, M10, etc.)</param>
+        /// <param name="value">String to be written.</param>
+        internal abstract void WriteDevice(string label, string value);
+        /// <summary>
         /// Write a single value to the server.
         /// </summary>
         /// <typeparam name="T">The data type of value.</typeparam>
         /// <param name="label">Label name. (EX: D0, Y2, M10, etc.)</param>
         /// <param name="value">A single value to be written.</param>
-        public void WriteDevice<T>(string label, T value) where T : struct
+        public void WriteDevice<T>(string label, T value)
         {
             switch (Type.GetTypeCode(typeof(T)))
             {
                 case TypeCode.Boolean:
-                    WriteDevice(label, (bool)Convert.ChangeType(value, TypeCode.Boolean));
+                    WriteDevice(label, (bool)Convert.ChangeType(value, typeof(bool)));
                     break;
                 case TypeCode.Int16:
-                    WriteDevice(label, (short)Convert.ChangeType(value, TypeCode.Int16));
+                    WriteDevice(label, (short)Convert.ChangeType(value, typeof(short)));
                     break;
                 case TypeCode.UInt16:
-                    WriteDevice(label, (short)(ushort)Convert.ChangeType(value, TypeCode.UInt16));
+                    WriteDevice(label, (short)(ushort)Convert.ChangeType(value, typeof(ushort)));
                     break;
                 case TypeCode.Int32:
-                    WriteDevice(label, (int)Convert.ChangeType(value, TypeCode.Int32));
+                    WriteDevice(label, (int)Convert.ChangeType(value, typeof(int)));
                     break;
                 case TypeCode.UInt32:
-                    WriteDevice(label, (int)(uint)Convert.ChangeType(value, TypeCode.UInt32));
+                    WriteDevice(label, (int)(uint)Convert.ChangeType(value, typeof(uint)));
                     break;
                 case TypeCode.Single:
-                    WriteDevice(label, (float)Convert.ChangeType(value, TypeCode.Single));
+                    WriteDevice(label, (float)Convert.ChangeType(value, typeof(float)));
+                    break;
+                case TypeCode.String:
+                    WriteDevice(label, (string)Convert.ChangeType(value, typeof(string))); // Correct casting for string
                     break;
                 default:
-                    throw new InvalidCastException("Invalid input data type.");
+                    throw new InvalidCastException("Unsupported data type for WriteDevice.");
             }
         }
+
         /// <summary>
         /// Write multiple values to the server in a batch. 
         /// </summary>

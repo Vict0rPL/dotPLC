@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net472;net45;net461</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net472;net45;net461;net6.0</TargetFrameworks>
     <Authors>Luong Cong Han</Authors>
     <Company>Luong Cong Han</Company>
     <Description>A .NET Library for Mitsubishi Connectivity</Description>
@@ -19,10 +19,11 @@
     <Version>1.1.2</Version>
     <PackageReadmeFile></PackageReadmeFile>
     <PackageReleaseNotes>Change SelfTestCheckInterval value.</PackageReleaseNotes>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <DocumentationFile>E:\dotPLC\dotPLC\dotPLC.xml</DocumentationFile>
+
     <WarningLevel>3</WarningLevel>
   </PropertyGroup>
 
@@ -30,12 +31,6 @@
     <None Remove="dotPLC32x32png.png" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="C:\Users\Dell Latitude 3540\OneDrive\Documents\My Code\SourceCode\dotPLC\dotPLC\dotPLC32x32png.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-  </ItemGroup>
 
   <ItemGroup>
     <Compile Update="Properties\Resources.Designer.cs">

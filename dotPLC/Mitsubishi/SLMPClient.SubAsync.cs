@@ -2,6 +2,7 @@
 using dotPLC.Mitsubishi.Types;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -115,6 +116,63 @@ namespace dotPLC.Mitsubishi
             int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
             Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
         }
+        /////////////////////////////////////////////
+        private async Task WriteDeviceSubAsync(string label, string value)
+        {
+            byte[] asciiBytes = Encoding.ASCII.GetBytes(value);
+            Debug.WriteLine($"ASCII Bytes: {BitConverter.ToString(asciiBytes)}");
+            // Calculate total length of ASCII bytes
+            int totalLength = asciiBytes.Length + 9; // 9 includes command, subcommand, address, device parameters, and the 2 bytes for the length of the ASCII bytes.
+
+            // Debug information before sending
+
+
+            // Preparing the SendBuffer with consistent command and subcommand
+            SendBuffer[7] = 0x10;
+            SendBuffer[8] = 0x00;
+            SendBuffer[11] = 0x01; // Command
+            SendBuffer[12] = 0x14; // Subcommand
+            SendBuffer[13] = 0x00;
+            SendBuffer[14] = 0x00;
+
+            Debug.WriteLine($"Total Length: {totalLength}, Command: {SendBuffer[11]}, Subcommand: {SendBuffer[12]}");
+
+            // Setup device-specific parameters
+            SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
+
+            // Length of ASCII bytes, consistent with handling of other types
+            SendBuffer[19] = 0x02;
+            SendBuffer[20] = 0x00;
+
+            // Place ASCII bytes into the buffer
+            Array.Copy(asciiBytes, 0, SendBuffer, 21, asciiBytes.Length);
+
+            // Debug the actual data being sent
+            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 21 + asciiBytes.Length));
+
+            // Send the data
+            try
+            {
+                StreamData(21 + asciiBytes.Length, 11);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Exception caught: {ex.Message}");
+                Trouble?.Invoke(this, new TroubleshootingEventArgs(0));
+            }
+
+            // Check response in the receive buffer
+            if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
+            {
+                Debug.WriteLine("Message sent successfully");
+                return;
+            }
+            int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
+            Debug.WriteLine($"Error in PLC Communication: Error Code {errorCode}");
+            Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
+        }
+
+        ////////////////////////////////////////////////
         /// <summary>
         /// Write multiple values to the server in a batch as an asynchronous operation.
         /// </summary>

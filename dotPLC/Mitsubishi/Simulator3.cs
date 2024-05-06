@@ -200,6 +200,8 @@ namespace dotPLC.Mitsubishi
             _stream.Write(SendBuffer, 0, 77);
             _stream.Read(ReceveiBuffer, 0, 512);
         }
+        internal override void WriteDevice(string label, string value)
+        { }// fill later
         /// <summary>
         ///  Write multiple values to the server in a batch.
         /// </summary>

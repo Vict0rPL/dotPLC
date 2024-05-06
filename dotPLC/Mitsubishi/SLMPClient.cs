@@ -2,7 +2,9 @@
 using dotPLC.Mitsubishi.Types;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -854,6 +856,7 @@ namespace dotPLC.Mitsubishi
             byte[] bytes = BitConverter.GetBytes(value);
             SendBuffer[21] = bytes[0];
             SendBuffer[22] = bytes[1];
+            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 23));
             StreamData(23, 11);
             if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
                 return;
@@ -880,6 +883,7 @@ namespace dotPLC.Mitsubishi
             byte[] bytes = BitConverter.GetBytes(value);
             for (int index = 0; index < 4; ++index)
                 SendBuffer[21 + index] = bytes[index];
+            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 25));
             StreamData(25, 11);
             if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
                 return;
@@ -912,6 +916,65 @@ namespace dotPLC.Mitsubishi
             Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
         }
         /// <summary>
+        /// Write single value to the server.
+        /// </summary>
+        /// <param name="label">Label name. (EX: D0, Y2, M10, etc.)</param>
+        /// <param name="value">A single value to be written.</param>
+        internal override void WriteDevice(string label, string value)
+        {
+            byte[] asciiBytes = Encoding.ASCII.GetBytes(value);
+            Debug.WriteLine($"ASCII Bytes: {BitConverter.ToString(asciiBytes)}");
+            // Calculate total length of ASCII bytes
+            int totalLength = 12 + 2*(asciiBytes.Length); // 9 includes command, subcommand, address, device parameters, and the 2 bytes for the length of the ASCII bytes.
+
+            // Debug information before sending
+
+
+            // Preparing the SendBuffer with consistent command and subcommand
+            SendBuffer[7] = (byte)(totalLength & 0xFF);
+            SendBuffer[8] = (byte)((totalLength >> 8) & 0xFF);
+            SendBuffer[11] = 0x01; // Command
+            SendBuffer[12] = 0x14; 
+            SendBuffer[13] = 0x00;// Subcommand
+            SendBuffer[14] = 0x00;
+
+            Debug.WriteLine($"Total Length: {totalLength}, Command: {SendBuffer[11]}, Subcommand: {SendBuffer[12]}");
+
+            // Setup device-specific parameters
+            SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
+
+            // Length of ASCII bytes, consistent with handling of other types
+            SendBuffer[19] = (byte)(asciiBytes.Length & 0xFF);
+            SendBuffer[20] = (byte)((asciiBytes.Length >> 8) & 0xFF);
+
+            // Place ASCII bytes into the buffer
+            Array.Copy(asciiBytes, 0, SendBuffer, 21, asciiBytes.Length);
+
+            // Debug the actual data being sent
+            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 21 + asciiBytes.Length));
+
+            // Send the data
+            try
+            {
+                StreamData(25, 11);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Exception caught: {ex.Message}");
+                Trouble?.Invoke(this, new TroubleshootingEventArgs(0));
+            }
+
+            // Check response in the receive buffer
+            if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
+            {
+                Debug.WriteLine("Message sent successfully");
+                return;
+            }
+            int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
+            Debug.WriteLine($"Error in PLC Communication: Error Code {errorCode}");
+            Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
+        }
+        /// <summary>
         /// Write single value to the server as an asynchronous operation.
         /// </summary>
         /// <param name="label">Label name. (EX: D0, Y2, M10, etc.)</param>
@@ -939,6 +1002,7 @@ namespace dotPLC.Mitsubishi
         /// <param name="value">A single value to be written.</param>
         /// <returns>Returns <see cref="System.Threading.Tasks.Task"></see> The task object representing the asynchronous operation.</returns>
         internal async Task WriteDeviceAsync(string label, float value) => await _queue.Enqueue(() => WriteDeviceSubAsync(label, value)).ConfigureAwait(false);
+        internal async Task WriteDeviceAsync(string label, string value) => await _queue.Enqueue(() => WriteDeviceSubAsync(label, value)).ConfigureAwait(false);
         /// <summary>
         /// Write single value to the server as an asynchronous operation.
         /// </summary>
@@ -968,10 +1032,74 @@ namespace dotPLC.Mitsubishi
                 case TypeCode.Single:
                     await WriteDeviceAsync(label, (float)Convert.ChangeType(value, TypeCode.Single));
                     break;
+                case TypeCode.String:
+                    await WriteDeviceAsync(label, (string)Convert.ChangeType(value, TypeCode.String));
+                    break;
                 default:
                     throw new InvalidCastException("Invalid input data type.");
             }
         }
+
+
+
+
+
+        /// <summary>
+        /// Writes a string across multiple devices with each device holding a maximum of two ASCII characters.
+        /// </summary>
+        /// <param name="baseLabel">The base label for the devices (e.g., "D101").</param>
+        /// <param name="value">The string value to be written across devices.</param>
+        public void WriteStringAcrossDevices(string baseLabel, string value)
+        {
+            byte[] asciiBytes = Encoding.ASCII.GetBytes(value);
+            int deviceNumber = int.Parse(baseLabel.Substring(1)); // Extracts the number from the label, assuming the label starts with a single letter.
+            string deviceType = baseLabel.Substring(0, 1); // Extracts the device type (e.g., "D").
+
+            for (int i = 0; i < asciiBytes.Length; i += 2)
+            {
+                string deviceLabel = $"{deviceType}{deviceNumber}"; // Constructs the complete device label.
+                string chunk = i + 1 < asciiBytes.Length
+                               ? new string(new char[] { (char)asciiBytes[i], (char)asciiBytes[i + 1] })
+                               : new string(new char[] { (char)asciiBytes[i] });
+                Debug.WriteLine($"Writing {chunk} to {deviceLabel}");
+                WriteDevice(deviceLabel, chunk); // Writes to the device.
+                deviceNumber++; // Increments the device number for the next label.
+            }
+        }
+
+
+
+
+
+
+
+
+        public string ReadString(string label, int length)
+        {
+            SendBuffer[7] = 0x0C; // Length of the request packet
+            SendBuffer[8] = 0x00;
+            SendBuffer[11] = 0x01; // Command
+            SendBuffer[12] = 0x04; // Subcommand for read
+            SendBuffer[13] = 0x00; // Placeholder
+            SendBuffer[14] = 0x00; // Placeholder
+            SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
+            SendBuffer[19] = (byte)(length & 0xFF);
+            SendBuffer[20] = (byte)((length >> 8) & 0xFF);
+            StreamData(21, 11 + length);
+
+            if (ReceveiBuffer[9] != 0x00 || ReceveiBuffer[10] != 0x00)
+            {
+                int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
+                Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
+                return null;
+            }
+            Debug.WriteLine("Received Data: " + BitConverter.ToString(ReceveiBuffer, 0, 11 + length));
+            return Encoding.ASCII.GetString(ReceveiBuffer, 11, length);
+        }
+
+
+
+
         /// <summary>
         ///  Write multiple values to the server in a batch.
         /// </summary>

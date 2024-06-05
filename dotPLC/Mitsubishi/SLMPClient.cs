@@ -3,6 +3,7 @@ using dotPLC.Mitsubishi.Types;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -375,31 +376,52 @@ namespace dotPLC.Mitsubishi
         /// <param name="writeLenght">writeLenght</param>
         /// <param name="readLenght">readLenght</param>
         /// <returns>Returns <see cref="System.Threading.Tasks.Task"></see> The task object representing the asynchronous operation.</returns>
-        private async Task StreamDataAsync(int writeLenght, int readLenght)
+        private async Task StreamDataAsync(int writeLength, int readLength)
         {
             try
             {
+                // Ensure timers are stopped
                 _selfTestTimer.Stop();
                 _breakTimer.Stop();
                 _reconnectLimitTimer.Stop();
-                await _stream.WriteAsync(SendBuffer, 0, writeLenght).ConfigureAwait(false);
-                await _stream.ReadAsync(ReceveiBuffer, 0, readLenght).ConfigureAwait(false);
-                if (_autoReconnect == AutoReconnect.None)
-                    return;
-                _breakTimer.Start();
+
+                // Debug output for the data being sent
+                //Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer));
+
+                // Write data to the stream
+                //Debug.WriteLine($"Writing data to stream, expecting " + readLength + " bytes");
+                await _stream.WriteAsync(SendBuffer, 0, writeLength).ConfigureAwait(false);
+
+
+                // Read data from the stream
+                //Debug.WriteLine("Reading from stream, expecting " + readLength + " bytes");
+                await _stream.ReadAsync(ReceveiBuffer, 0, readLength).ConfigureAwait(false);
+
+                // Debug output for the received data
+                //Debug.WriteLine("Received Data: " + BitConverter.ToString(ReceveiBuffer));
+
+                // Restart the break timer if auto-reconnect is enabled
+                if (_autoReconnect != AutoReconnect.None)
+                {
+                    _breakTimer.Start();
+                }
             }
             catch (NullReferenceException ex)
             {
                 _breakTimer.Stop();
+                //Debug.WriteLine("NullReferenceException: " + ex.Message);
                 throw new Exception(ex.Message);
             }
             catch (Exception ex)
             {
-                if (isReconnecting || !_isConnectStart) //test
+                //Debug.WriteLine("Exception: " + ex.Message);
+                if (isReconnecting || !_isConnectStart)
                 {
                     throw new Exception(ex.Message);
                 }
+
                 InnerClose();
+
                 if (_autoReconnect == AutoReconnect.None || _autoReconnect == AutoReconnect.JustDetectDisconnected)
                 {
                     throw new Exception(ex.Message);
@@ -414,6 +436,7 @@ namespace dotPLC.Mitsubishi
                 }
             }
         }
+
         /// <summary>
         /// Auto-Reconnect
         /// </summary>
@@ -856,7 +879,7 @@ namespace dotPLC.Mitsubishi
             byte[] bytes = BitConverter.GetBytes(value);
             SendBuffer[21] = bytes[0];
             SendBuffer[22] = bytes[1];
-            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 23));
+            //Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 23));
             StreamData(23, 11);
             if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
                 return;
@@ -883,7 +906,7 @@ namespace dotPLC.Mitsubishi
             byte[] bytes = BitConverter.GetBytes(value);
             for (int index = 0; index < 4; ++index)
                 SendBuffer[21 + index] = bytes[index];
-            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 25));
+            //Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 25));
             StreamData(25, 11);
             if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
                 return;
@@ -923,7 +946,7 @@ namespace dotPLC.Mitsubishi
         internal override void WriteDevice(string label, string value)
         {
             byte[] asciiBytes = Encoding.ASCII.GetBytes(value);
-            Debug.WriteLine($"ASCII Bytes: {BitConverter.ToString(asciiBytes)}");
+            //Debug.WriteLine($"ASCII Bytes: {BitConverter.ToString(asciiBytes)}");
             // Calculate total length of ASCII bytes
             int totalLength = 12 + 2*(asciiBytes.Length); // 9 includes command, subcommand, address, device parameters, and the 2 bytes for the length of the ASCII bytes.
 
@@ -938,7 +961,7 @@ namespace dotPLC.Mitsubishi
             SendBuffer[13] = 0x00;// Subcommand
             SendBuffer[14] = 0x00;
 
-            Debug.WriteLine($"Total Length: {totalLength}, Command: {SendBuffer[11]}, Subcommand: {SendBuffer[12]}");
+            //Debug.WriteLine($"Total Length: {totalLength}, Command: {SendBuffer[11]}, Subcommand: {SendBuffer[12]}");
 
             // Setup device-specific parameters
             SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
@@ -951,7 +974,7 @@ namespace dotPLC.Mitsubishi
             Array.Copy(asciiBytes, 0, SendBuffer, 21, asciiBytes.Length);
 
             // Debug the actual data being sent
-            Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 21 + asciiBytes.Length));
+            //Debug.WriteLine("Sending Data: " + BitConverter.ToString(SendBuffer, 0, 21 + asciiBytes.Length));
 
             // Send the data
             try
@@ -967,7 +990,7 @@ namespace dotPLC.Mitsubishi
             // Check response in the receive buffer
             if (ReceveiBuffer[9] == 0x00 && ReceveiBuffer[10] == 0x00)
             {
-                Debug.WriteLine("Message sent successfully");
+                //Debug.WriteLine("Message sent successfully");
                 return;
             }
             int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
@@ -1066,38 +1089,6 @@ namespace dotPLC.Mitsubishi
                 deviceNumber++; // Increments the device number for the next label.
             }
         }
-
-
-
-
-
-
-
-
-        public string ReadString(string label, int length)
-        {
-            SendBuffer[7] = 0x0C; // Length of the request packet
-            SendBuffer[8] = 0x00;
-            SendBuffer[11] = 0x01; // Command
-            SendBuffer[12] = 0x04; // Subcommand for read
-            SendBuffer[13] = 0x00; // Placeholder
-            SendBuffer[14] = 0x00; // Placeholder
-            SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
-            SendBuffer[19] = (byte)(length & 0xFF);
-            SendBuffer[20] = (byte)((length >> 8) & 0xFF);
-            StreamData(21, 11 + length);
-
-            if (ReceveiBuffer[9] != 0x00 || ReceveiBuffer[10] != 0x00)
-            {
-                int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
-                Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
-                return null;
-            }
-            Debug.WriteLine("Received Data: " + BitConverter.ToString(ReceveiBuffer, 0, 11 + length));
-            return Encoding.ASCII.GetString(ReceveiBuffer, 11, length);
-        }
-
-
 
 
         /// <summary>
@@ -1678,6 +1669,35 @@ namespace dotPLC.Mitsubishi
                 num = BitConverter.ToSingle(ReceveiBuffer, 11);
             return num;
         }
+
+        public async Task<string> ReadString(string label, int size)
+        {
+            string str = string.Empty;
+            int count = size;
+            if (size % 2 != 0)
+                ++size;
+            SendBuffer[7] = 0x0C;
+            SendBuffer[8] = 0x00;
+            SendBuffer[11] = 0x01;
+            SendBuffer[12] = 0x04;
+            SendBuffer[13] = 0x00;
+            SendBuffer[14] = 0x00;
+            SettingDevice(label, out SendBuffer[18], out SendBuffer[15], out SendBuffer[16], out SendBuffer[17]);
+            byte[] bytes = BitConverter.GetBytes(size / 2);
+            SendBuffer[19] = bytes[0];
+            SendBuffer[20] = bytes[1];
+            await StreamDataAsync(21, 11 + size).ConfigureAwait(false);
+            if (ReceveiBuffer[9] != 0x00 || ReceveiBuffer[10] != 0x00)
+            {
+                int errorCode = (ReceveiBuffer[10] << 8) + ReceveiBuffer[9];
+                Trouble?.Invoke(this, new TroubleshootingEventArgs(errorCode));
+            }
+            else
+                str = count % 2 != 0 ? Encoding.ASCII.GetString(ReceveiBuffer, 11, count) : Encoding.ASCII.GetString(ReceveiBuffer, 11, size);
+            return str;
+        }
+
+
         /// <summary>
         /// Read a single value from the server as an asynchronous operation.
         /// </summary>
